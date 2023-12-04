@@ -1,0 +1,46 @@
+name: Docker build and push
+
+on:
+  workflow_call:
+    inputs:
+      branch_name:
+        type: string
+        description: "If branch is main or master - image 'latest' also will be pushed"
+        required: false
+      tag_name:
+        type: string
+        description: "If branch is main or master - image 'latest' will be pushed"
+        required: false
+
+jobs:
+  package:
+    name: Package containers
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+    - uses: actions/checkout@v4
+    - id: auth
+      name: Authenticate with Google Cloud
+      uses: google-github-actions/auth@v1
+      with:
+        token_format: access_token
+        workload_identity_provider: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
+        service_account: ${{ vars.WORKLOAD_IDENTITY_SERVICE_ACCOUNT_EMAIL }}
+        # access_token_lifetime: 300s
+
+    - name: Login to Artifact Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ vars.CONTAINER_REGISTRY_DOMAIN }}
+        username: oauth2accesstoken
+        password: ${{ steps.auth.outputs.access_token }}
+
+    - run: make package
+      env:
+        DOCKER_REGISTRY: ${{ vars.CONTAINER_REGISTRY }}
+        BRANCH_NAME: ${{ inputs.branch_name }}
+        TAG_NAME: ${{ inputs.tag_name }}

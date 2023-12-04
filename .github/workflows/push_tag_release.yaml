@@ -1,0 +1,49 @@
+name: Package and deploy release (like v0.0.0) tag
+
+on:
+  push:
+    tags:
+      - v[0-9]+.[0-9]+.[0-9]+
+
+jobs:
+  go:
+    name: Go
+    uses: ./.github/workflows/go.yaml
+    with:
+      is_docker_build: false
+
+  docker_build_push:
+    name: Docker build
+    needs: [go]
+    uses: ./.github/workflows/docker_build_push.yaml
+    secrets: inherit # pass all secrets
+    with:
+      tag_name: ${{ github.ref_name }}
+
+  # helm:
+  #   name: Update helm chart
+  #   needs: [docker_build_push]
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - name: Generate a token for GitHub APP internal-infra
+  #     id: generate_token
+  #     uses: actions/create-github-app-token@v1
+  #     with:
+  #       owner: glassflow
+  #       repo: helm-charts
+  #       app-id: ${{ secrets.CI_CD_APP_ID }}
+  #       private-key: ${{ secrets.CI_CD_PRIVATE_KEY }}
+  #   - uses: actions/github-script@v7
+  #     with:
+  #       github-token: ${{ steps.generate_token.outputs.token }}
+  #       script: |
+  #         await github.rest.actions.createWorkflowDispatch({
+  #           owner: 'glassflow',
+  #           repo: 'helm-charts',
+  #           workflow_id: 'deploy_and_commit_new_version.yaml',
+  #           ref: 'main',
+  #           inputs: {
+  #             service: "${{ github.event.repository.name }}",
+  #             version: "${{ github.ref_name }}",
+  #           },
+  #         })

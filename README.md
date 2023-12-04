@@ -4,6 +4,34 @@ JetStream NATS KEDA connector image can be used in the Kubernetes deployment as 
 
 The job of the connector is to read messages from the subject in the given stream, call an HTTP endpoint with the body of the message, and write response or error in the response_topic. Following enviornment variables are used by connector image as configuration to connect and authenticate with NATs server which should be defined in the Kubernetes deployment manifest.
 
+
+## Configuration
+
+[cmd-output]: # (PRINT HELP)
+
+flag                     | ENV                      | default | required
+------------------------ | ------------------------ | ------- | --------
+addr                     | ADDR                     | :8080   |
+shutdowntimeout          | SHUTDOWNTIMEOUT          | 30s     |
+server                   | SERVER                   |         |
+server-readtimeout       | SERVER_READTIMEOUT       |         |
+server-readheadertimeout | SERVER_READHEADERTIMEOUT | 3s      |
+server-writetimeout      | SERVER_WRITETIMEOUT      |         |
+server-idletimeout       | SERVER_IDLETIMEOUT       | 5m      |
+log                      | LOG                      |         |
+log-level                | LOG_LEVEL                | info    |
+log-handler              | LOG_HANDLER              | json    |
+log-addsource            | LOG_ADDSOURCE            | true    |
+metrics                  | METRICS                  |         |
+metrics-enable           | METRICS_ENABLE           | true    |
+metrics-addr             | METRICS_ADDR             | :2112   |
+pprof                    | PPROF                    |         |
+pprof-enable             | PPROF_ENABLE             | true    |
+pprof-addr               | PPROF_ADDR               | :6060   |
+
+[cmd-output]: # (END)
+
+
 - `TOPIC`: Subject from which messages are read. It is generally of form - `streamname.subjectname`
 - `RESPONSE_TOPIC`: Subject to write responses on success response.  It is generally of form - `response_stream_name.response_subject_name` where streamname should be different then input stream. `response_stream_name` is output stream name. `response_subject_name` subject name where output is send
 - `ERROR_TOPIC`: Subject to write errors on failure.  It is generally of form - `err_response_stream_name.error_subject_name` where streamname should be different then input stream. `err_response_stream_name` is error stream name. `error_subject_name` subject name where error output is send

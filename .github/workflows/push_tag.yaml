@@ -1,0 +1,21 @@
+name: Package non release tag (like release tag but with a custom suffix 'v0.0.0-<suffix>')
+
+on:
+  push:
+    tags:
+      - v[0-9]+.[0-9]+.[0-9]+-*
+
+jobs:
+  go:
+    name: Go
+    uses: ./.github/workflows/go.yaml
+    with:
+      is_docker_build: false
+
+  docker_build_push:
+    name: Docker build
+    needs: [go]
+    uses: ./.github/workflows/docker_build_push.yaml
+    secrets: inherit # pass all secrets
+    with:
+      tag_name: ${{ github.ref_name }}

@@ -1,0 +1,82 @@
+name: Go
+
+on:
+  workflow_call:
+    inputs:
+      is_docker_build:
+        description: "Build docker image"
+        default: true
+        required: false
+        type: boolean
+
+jobs:
+  ci_check:
+    name: CI checks (go.mod, codegen, ...)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v4
+      with:
+        go-version-file: 'go.mod'
+    # - run: make ci-check // this is equal, but separate calls help to track down processing time
+    - run: make check-go-mod-vendor
+    - run: make codegen-install
+    - run: make check-codegen
+    # - run: make check-readme // we do this step on "build" job later, we can save time and do not compile the whole service twice
+    - run: make check-git-diff-is-clean
+
+  lint:
+    name: Lint (golangci-lint, ...)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v4
+      with:
+        go-version-file: 'go.mod'
+    - id: lint-version
+      run: echo "lint_version=$(make env-CI_GOLANGCI_LINT_VERSION)" >> "$GITHUB_OUTPUT"
+    - name: golangci-lint
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: ${{ steps.lint-version.outputs.lint_version }}
+        # Optional: golangci-lint command line arguments.
+        #
+        # Note: By default, the `.golangci.yml` file should be at the root of the repository.
+        # The location of the configuration file can be changed by using `--config=`
+        # args: --timeout=30m --config=/my/path/.golangci.yml --issues-exit-code=0
+    - run: make lint-nargs-install
+    - run: make lint-nargs
+
+  tests:
+    name: Test (go test)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v4
+      with:
+        go-version-file: 'go.mod'
+    - run: make test
+
+  build:
+    name: Build (go build -o /dev/null)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v4
+      with:
+        go-version-file: 'go.mod'
+    - run: make build
+      env:
+        BUILD_OUTPUT: ./ci-service-binary
+    - name: Check README.md configuration documentation
+      run: make check-readme
+      env:
+        README_GEN_BIN: ./ci-service-binary
+
+  docker_build:
+    name: Docker build
+    if: ${{ inputs.is_docker_build }}
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - run: make docker-build
