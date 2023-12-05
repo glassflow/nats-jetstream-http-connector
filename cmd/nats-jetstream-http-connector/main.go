@@ -7,12 +7,9 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/fission/keda-connectors/common"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
@@ -20,46 +17,49 @@ import (
 )
 
 //nolint:govet // General config of the service with focus on human readability.
-type Config struct{}
+type Config struct {
+	NatsServer string        `env:"NATS_SERVER"`
+	Consumer   string        `env:"CONSUMER"`
+	AckWait    time.Duration `env:"ACKWAIT" default:"1m"`
+
+	Topic         string `env:"TOPIC" required:""`
+	HTTPEndpoint  string `env:"HTTP_ENDPOINT" required:""`
+	MaxRetries    int    `env:"MAX_RETRIES" required:""`
+	ContentType   string `env:"CONTENT_TYPE" required:""`
+	ResponseTopic string `env:"RESPONSE_TOPIC"`
+	ErrorTopic    string `env:"ERROR_TOPIC"`
+	SourceName    string `env:"SOURCE_NAME" default:"KEDAConnector"`
+
+	Concurrent int `env:"CONCURRENT" default:"1"`
+}
 
 func main() {
 	service.Main[Config](mainErr)
 }
 
-func mainErr(ctx context.Context, _ Config, log *slog.Logger, base service.Base) error {
-	host := os.Getenv("NATS_SERVER")
-	consumer := os.Getenv("CONSUMER")
-	ackwait := os.Getenv("ACKWAIT")
+func mainErr(ctx context.Context, cfg Config, log *slog.Logger, base service.Base) error {
+	nc, err := nats.Connect(cfg.NatsServer)
+	if err != nil {
+		return fmt.Errorf("cannot connect to nats: %w", err)
+	}
 
-	nc, _ := nats.Connect(host)
 	js, err := jetstream.New(nc)
-	// js, err := nc.JetStream()
 	if err != nil {
 		return fmt.Errorf("error while getting jetstream context: %w", err)
 	}
 
-	connectordata, err := common.ParseConnectorMetadata()
-	if err != nil {
-		return fmt.Errorf("error occurred while parsing metadata: %w", err)
-	}
-
 	conn := jetstreamConnector{
-		host:            host,
-		fissionConsumer: consumer,
-		connectordata:   connectordata,
-		jsContext:       js,
-		logger:          log,
-		consumer:        consumer,
-		nc:              nc,
-		ackwait:         ackwait,
-		concurrentSem:   initialiseConcurrency(),
+		host:          cfg.NatsServer,
+		connectordata: cfg,
+		jsContext:     js,
+		logger:        log,
+		consumer:      cfg.Consumer,
+		concurrentSem: make(chan int, cfg.Concurrent),
 	}
 
 	base.AddGracefulService("consumer", func() {
 		err = conn.consumeMessage(ctx)
-	}, func(ctx context.Context) error {
-		return nil
-	})
+	}, nil)
 
 	base.ListenAndServe(nil, nil)
 
@@ -70,55 +70,17 @@ func mainErr(ctx context.Context, _ Config, log *slog.Logger, base service.Base)
 }
 
 type jetstreamConnector struct {
-	host            string
-	fissionConsumer string
-	connectordata   common.ConnectorMetadata
-	jsContext       jetstream.JetStream
-	logger          *slog.Logger
-	consumer        string
-	nc              *nats.Conn
-	ackwait         string
-	concurrentSem   chan int
+	host          string
+	connectordata Config
+	jsContext     jetstream.JetStream
+	logger        *slog.Logger
+	consumer      string
+	concurrentSem chan int
 }
-
-func initialiseConcurrency() chan int {
-	concurrent := os.Getenv("CONCURRENT")
-	concurrency := 1
-	if concurrent != "" {
-		var err error
-		concurrency, err = strconv.Atoi(concurrent)
-		if err != nil {
-			concurrency = 1
-		}
-	}
-	if concurrency < 1 {
-		concurrency = 1
-	}
-	return make(chan int, concurrency)
-}
-
-// func (conn jetstreamConnector) getAckwait() (time.Duration, error) {
-// 	ackwait := 30 * time.Second
-// 	if conn.ackwait != "" {
-// 		var err error
-// 		ackwait, err = time.ParseDuration(conn.ackwait)
-// 		if err != nil {
-// 			conn.logger.Debug("error occurred while parsing ackwait", slog.Any("error", err))
-// 			return ackwait, err
-// 		}
-// 	}
-// 	return ackwait, nil
-// }
 
 func (conn jetstreamConnector) consumeMessage(ctx context.Context) error {
 	log := conn.logger
-	// Establish ackwait
-	// ackwait, err := conn.getAckwait()
-	// if err != nil {
-	// 	return err
-	// }
-
-	var askWait time.Duration = time.Minute
+	var askWait time.Duration = conn.connectordata.AckWait
 
 	cs, err := conn.jsContext.Consumer(ctx, conn.connectordata.Topic, conn.consumer)
 	if err != nil {
@@ -154,14 +116,6 @@ func (conn jetstreamConnector) consumeMessage(ctx context.Context) error {
 			<-conn.concurrentSem
 		}()
 	})
-
-	// Create durable consumer monitor
-	// sub, err := conn.jsContext.consu(conn.connectordata.Topic, func(msg *nats.Msg) {
-	// 	conn.concurrentSem <- 1
-	// 	go conn.handleHTTPRequest(msg)
-	// 	// Durable is required because if we allow jetstream to create new consumer we
-	// 	// will be reading records from the start from the stream.
-	// }, nats.Durable(conn.consumer), nats.ManualAck(), nats.AckWait(ackwait))
 	if err != nil {
 		log.Debug("error occurred while parsing metadata", slog.Any("error", err))
 		return err
@@ -169,11 +123,7 @@ func (conn jetstreamConnector) consumeMessage(ctx context.Context) error {
 
 	<-ctx.Done()
 
-	log.Info("unsubscribing and closing connection...")
-	// err = sub.Unsubscribe()
-	if err != nil {
-		log.Error("error while unsubscribing", slog.Any("error", err))
-	}
+	log.Info("closing connection...")
 
 	return nil
 }
@@ -239,9 +189,6 @@ func (conn jetstreamConnector) responseHandler(response []byte) bool {
 	}
 
 	_, err := conn.jsContext.Publish(context.Background(), conn.connectordata.ResponseTopic, response)
-
-	// _, publishErr := conn.jsContext.Publish(conn.connectordata.ResponseTopic, response)
-
 	if err != nil {
 		log.Error("failed to publish response body from http request to topic",
 			slog.Any("error", err),
@@ -277,14 +224,14 @@ func (conn jetstreamConnector) errorHandler(err error) {
 }
 
 // HandleHTTPRequest sends message and headers data to HTTP endpoint using POST method and returns response on success or error in case of failure
-func HandleHTTPRequest(ctx context.Context, message string, headers http.Header, data common.ConnectorMetadata, log *slog.Logger) (*http.Response, error) {
+func HandleHTTPRequest(ctx context.Context, message string, headers http.Header, cfg Config, log *slog.Logger) (*http.Response, error) {
 
 	var resp *http.Response
-	for attempt := 0; attempt <= data.MaxRetries; attempt++ {
+	for attempt := 0; attempt <= cfg.MaxRetries; attempt++ {
 		// Create request
-		req, err := http.NewRequestWithContext(ctx, "POST", data.HTTPEndpoint, strings.NewReader(message))
+		req, err := http.NewRequestWithContext(ctx, "POST", cfg.HTTPEndpoint, strings.NewReader(message))
 		if err != nil {
-			return nil, fmt.Errorf("failed to create HTTP request to invoke function. http_endpoint: %v, source: %v: %w", data.HTTPEndpoint, data.SourceName, err)
+			return nil, fmt.Errorf("failed to create HTTP request to invoke function. http_endpoint: %v, source: %v: %w", cfg.HTTPEndpoint, cfg.SourceName, err)
 		}
 
 		// Add headers
@@ -299,8 +246,8 @@ func HandleHTTPRequest(ctx context.Context, message string, headers http.Header,
 		if err != nil {
 			log.Error("sending function invocation request failed",
 				slog.Any("error", err),
-				slog.String("http_endpoint", data.HTTPEndpoint),
-				slog.String("source", data.SourceName))
+				slog.String("http_endpoint", cfg.HTTPEndpoint),
+				slog.String("source", cfg.SourceName))
 			continue
 		}
 		if resp == nil {
@@ -313,11 +260,11 @@ func HandleHTTPRequest(ctx context.Context, message string, headers http.Header,
 	}
 
 	if resp == nil {
-		return nil, fmt.Errorf("every function invocation retry failed; final retry gave empty response. http_endpoint: %v, source: %v", data.HTTPEndpoint, data.SourceName)
+		return nil, fmt.Errorf("every function invocation retry failed; final retry gave empty response. http_endpoint: %v, source: %v", cfg.HTTPEndpoint, cfg.SourceName)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 300 {
-		return nil, fmt.Errorf("request returned failure: %v. http_endpoint: %v, source: %v", resp.StatusCode, data.HTTPEndpoint, data.SourceName)
+		return nil, fmt.Errorf("request returned failure: %v. http_endpoint: %v, source: %v", resp.StatusCode, cfg.HTTPEndpoint, cfg.SourceName)
 	}
 	return resp, nil
 }

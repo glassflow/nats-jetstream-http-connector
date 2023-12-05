@@ -9,25 +9,36 @@ The job of the connector is to read messages from the subject in the given strea
 
 [cmd-output]: # (PRINT HELP)
 
-flag                     | ENV                      | default | required
------------------------- | ------------------------ | ------- | --------
-addr                     | ADDR                     | :8080   |
-shutdowntimeout          | SHUTDOWNTIMEOUT          | 30s     |
-server                   | SERVER                   |         |
-server-readtimeout       | SERVER_READTIMEOUT       |         |
-server-readheadertimeout | SERVER_READHEADERTIMEOUT | 3s      |
-server-writetimeout      | SERVER_WRITETIMEOUT      |         |
-server-idletimeout       | SERVER_IDLETIMEOUT       | 5m      |
-log                      | LOG                      |         |
-log-level                | LOG_LEVEL                | info    |
-log-handler              | LOG_HANDLER              | json    |
-log-addsource            | LOG_ADDSOURCE            | true    |
-metrics                  | METRICS                  |         |
-metrics-enable           | METRICS_ENABLE           | true    |
-metrics-addr             | METRICS_ADDR             | :2112   |
-pprof                    | PPROF                    |         |
-pprof-enable             | PPROF_ENABLE             | true    |
-pprof-addr               | PPROF_ADDR               | :6060   |
+flag                     | ENV                      | default       | required
+------------------------ | ------------------------ | ------------- | --------
+natsserver               | NATS_SERVER              |               |
+consumer                 | CONSUMER                 |               |
+ackwait                  | ACKWAIT                  | 1m            |
+topic                    | TOPIC                    |               | *
+httpendpoint             | HTTP_ENDPOINT            |               | *
+maxretries               | MAX_RETRIES              |               | *
+contenttype              | CONTENT_TYPE             |               | *
+responsetopic            | RESPONSE_TOPIC           |               |
+errortopic               | ERROR_TOPIC              |               |
+sourcename               | SOURCE_NAME              | KEDAConnector |
+concurrent               | CONCURRENT               | 1             |
+addr                     | ADDR                     | :8080         |
+shutdowntimeout          | SHUTDOWNTIMEOUT          | 30s           |
+server                   | SERVER                   |               |
+server-readtimeout       | SERVER_READTIMEOUT       |               |
+server-readheadertimeout | SERVER_READHEADERTIMEOUT | 3s            |
+server-writetimeout      | SERVER_WRITETIMEOUT      |               |
+server-idletimeout       | SERVER_IDLETIMEOUT       | 5m            |
+log                      | LOG                      |               |
+log-level                | LOG_LEVEL                | info          |
+log-handler              | LOG_HANDLER              | json          |
+log-addsource            | LOG_ADDSOURCE            | true          |
+metrics                  | METRICS                  |               |
+metrics-enable           | METRICS_ENABLE           | true          |
+metrics-addr             | METRICS_ADDR             | :2112         |
+pprof                    | PPROF                    |               |
+pprof-enable             | PPROF_ENABLE             | true          |
+pprof-addr               | PPROF_ADDR               | :6060         |
 
 [cmd-output]: # (END)
 
